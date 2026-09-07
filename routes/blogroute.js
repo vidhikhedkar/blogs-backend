@@ -3,6 +3,7 @@ const router = express.Router();
 const { upload } = require('../config/cloudinary');
 const {
     getAllBlogs,
+    getTrashBlogs,
     getBlogById,
     createBlog,
     updateBlog,
@@ -14,6 +15,7 @@ const {
 
 // Collection Routes
 router.get('/blogs', getAllBlogs);
+router.get('/blogs/trash', getTrashBlogs);
 router.post('/blogs', upload.single('image'), createBlog);
 
 // Utility Action Routes

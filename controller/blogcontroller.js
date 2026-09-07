@@ -40,9 +40,7 @@ const getAllBlogs = async (req, res) => {
         let query = { isDeleted: false };
 
         if (status) {
-            query.status = status;
-        } else {
-            query.status = 'published';
+            query.status = status.toLowerCase();
         }
 
         if (category && category !== 'All') {
@@ -102,46 +100,219 @@ const getBlogById = async (req, res) => {
 
 const createBlog = async (req, res) => {
     try {
-        const { title, excerpt, content, category, tags, date, readTime, reads, seoTitle, metaDescription, slug, status, author } = req.body;
-        const image = req.file ? req.file.path : '';
-
-        if (!title || !content || !category || !image) {
-            return res.status(400).json({ error: 'Missing required fields or image upload failed' });
-        }
-
-        const finalSlug = slug ? generateSlug(slug) : generateSlug(title);
-
-        const existingSlug = await Blog.findOne({ slug: finalSlug });
-        if (existingSlug) {
-            return res.status(400).json({ error: 'Slug must be unique. A blog with this slug already exists.' });
-        }
-
-        const parsedAuthor = parseAuthor(author);
-
-        const newBlog = new Blog({
+        const {
             title,
+            headline,
             excerpt,
             content,
             category,
-            tags: parseTags(tags),
-            image,
+            tags,
             date,
+            publicationDate,
             readTime,
+            reads,
+            seoTitle,
+            metaTitle,
+            metaDescription,
+            slug,
+            status,
+            author
+        } = req.body;
+
+        const blogStatus = status || 'draft';
+
+        // Cloudinary uploaded image
+        const image = req.file ? req.file.path : '';
+
+        /*
+        ============================================================
+        DRAFT VALIDATION
+        ============================================================
+        Drafts are allowed to have incomplete information.
+
+        Example:
+        - Only headline → allowed
+        - Only content → allowed
+        - Only category → allowed
+        - Only image → allowed
+        - Only slug → allowed
+
+        We only require that the user entered at least one detail.
+        ============================================================
+        */
+
+        if (blogStatus === 'draft') {
+            const hasAnyData =
+                title?.trim() ||
+                headline?.trim() ||
+                excerpt?.trim() ||
+                content?.trim() ||
+                category?.trim() ||
+                slug?.trim() ||
+                tags ||
+                image ||
+                publicationDate ||
+                date ||
+                metaTitle?.trim() ||
+                seoTitle?.trim() ||
+                metaDescription?.trim() ||
+                author;
+
+            if (!hasAnyData) {
+                return res.status(400).json({
+                    error: 'Please provide at least one detail to save the draft'
+                });
+            }
+        }
+
+        /*
+        ============================================================
+        PUBLISHED VALIDATION
+        ============================================================
+        Published blogs must contain the important fields.
+        ============================================================
+        */
+
+        if (blogStatus === 'published') {
+            if (!title?.trim()) {
+                return res.status(400).json({
+                    error: 'Blog title is required to publish'
+                });
+            }
+
+            if (!content?.trim()) {
+                return res.status(400).json({
+                    error: 'Blog content is required to publish'
+                });
+            }
+
+            if (!category?.trim()) {
+                return res.status(400).json({
+                    error: 'Blog category is required to publish'
+                });
+            }
+
+            if (!image) {
+                return res.status(400).json({
+                    error: 'Cover image is required to publish'
+                });
+            }
+
+            if (!slug?.trim()) {
+                return res.status(400).json({
+                    error: 'Blog slug is required to publish'
+                });
+            }
+        }
+
+        /*
+        ============================================================
+        SLUG
+        ============================================================
+        */
+
+        let finalSlug = '';
+
+        if (slug?.trim()) {
+            finalSlug = generateSlug(slug);
+        } else if (title?.trim()) {
+            finalSlug = generateSlug(title);
+        }
+
+        /*
+        ============================================================
+        CHECK SLUG ONLY WHEN A SLUG EXISTS
+        ============================================================
+        */
+
+        if (finalSlug) {
+            const existingSlug = await Blog.findOne({
+                slug: finalSlug
+            });
+
+            if (existingSlug) {
+                return res.status(400).json({
+                    error:
+                        'Slug must be unique. A blog with this slug already exists.'
+                });
+            }
+        }
+
+        /*
+        ============================================================
+        PARSE AUTHOR
+        ============================================================
+        */
+
+        const parsedAuthor = parseAuthor(author);
+
+        /*
+        ============================================================
+        CREATE BLOG
+        ============================================================
+        */
+
+        const newBlog = new Blog({
+            title: title || headline || '',
+            excerpt: excerpt || '',
+            content: content || '',
+            category: category || '',
+            tags: parseTags(tags),
+            image: image || '',
+            date: date || publicationDate || '',
+            readTime: readTime || '1',
             reads: reads ? Number(reads) : 0,
-            seoTitle: seoTitle || title,
-            metaDescription: metaDescription || excerpt,
-            slug: finalSlug,
-            status: status || 'draft',
-            author: parsedAuthor || { name: 'Admin' }
+
+            // Support both frontend names
+            seoTitle: seoTitle || metaTitle || '',
+            metaDescription: metaDescription || excerpt || '',
+
+            // Important:
+            // Do not store empty string because slug is unique.
+            ...(finalSlug ? { slug: finalSlug } : {}),
+
+            status: blogStatus,
+
+            author: parsedAuthor || {
+                name: 'Admin',
+                role: 'Author'
+            }
         });
 
         await newBlog.save();
-        res.status(201).json({ message: 'Blog created successfully', blog: newBlog });
+
+        res.status(201).json({
+            message:
+                blogStatus === 'draft'
+                    ? 'Draft saved successfully'
+                    : 'Blog published successfully',
+            blog: newBlog
+        });
+
     } catch (error) {
-        console.error("createBlog error:", error);
-        res.status(500).json({ error: error.message || 'Internal Server Error' });
+        console.error('createBlog error:', error);
+
+        /*
+        ============================================================
+        MONGOOSE DUPLICATE KEY ERROR
+        ============================================================
+        */
+
+        if (error.code === 11000) {
+            return res.status(400).json({
+                error:
+                    'Slug must be unique. A blog with this slug already exists.'
+            });
+        }
+
+        res.status(500).json({
+            error:
+                error.message ||
+                'Internal Server Error'
+        });
     }
 };
+
 
 const updateBlog = async (req, res) => {
     try {
@@ -272,8 +443,99 @@ const hardDeleteBlog = async (req, res) => {
     }
 };
 
+
+
+// ============================================================
+// GET TRASH BLOGS
+// GET /api/blogs/trash
+// ============================================================
+const getTrashBlogs = async (req, res) => {
+    try {
+        const { search, category, tag, status, author } = req.query;
+
+        let query = {
+            isDeleted: true
+        };
+
+        if (status) {
+            query.status = status.toLowerCase();
+        }
+
+        if (category && category !== 'All') {
+            query.category = category;
+        }
+
+        if (tag) {
+            query.tags = tag;
+        }
+
+        if (author) {
+            query['author.name'] = {
+                $regex: author,
+                $options: 'i'
+            };
+        }
+
+        if (search) {
+            query.$or = [
+                {
+                    title: {
+                        $regex: search,
+                        $options: 'i'
+                    }
+                },
+                {
+                    excerpt: {
+                        $regex: search,
+                        $options: 'i'
+                    }
+                },
+                {
+                    seoTitle: {
+                        $regex: search,
+                        $options: 'i'
+                    }
+                },
+                {
+                    metaDescription: {
+                        $regex: search,
+                        $options: 'i'
+                    }
+                },
+                {
+                    'author.name': {
+                        $regex: search,
+                        $options: 'i'
+                    }
+                },
+                {
+                    tags: {
+                        $regex: search,
+                        $options: 'i'
+                    }
+                }
+            ];
+        }
+
+        const blogs = await Blog.find(query)
+            .sort({ deletedAt: -1, updatedAt: -1 });
+
+        res.status(200).json(blogs);
+
+    } catch (error) {
+        console.error('getTrashBlogs error:', error);
+
+        res.status(500).json({
+            error:
+                error.message ||
+                'Internal Server Error'
+        });
+    }
+};
+
 module.exports = {
     getAllBlogs,
+    getTrashBlogs,
     getBlogById,
     createBlog,
     updateBlog,
