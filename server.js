@@ -18,9 +18,9 @@ connectDB();
 
 // Dynamic Allowed Origins based on environment variables
 const allowedOrigins = [
-    'http://localhost:5173',
-    process.env.CLIENT_URL // Add your production frontend URL in Render Environment Variables
-].filter(Boolean); // Removes empty values to avoid CORS logic issues
+    'http://localhost:5173',"https://venture-boreholes-frontend.onrender.com/",
+    process.env.CLIENT_URL 
+].filter(Boolean);
 
 app.use(helmet());
 
