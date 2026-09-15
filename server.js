@@ -18,7 +18,7 @@ connectDB();
 
 // Dynamic Allowed Origins based on environment variables
 const allowedOrigins = [
-    'http://localhost:5173', "https://venture-boreholes-frontend.onrender.com",
+    'http://localhost:5173', "https://blogs-frontend-b8x4.onrender.com",
     process.env.CLIENT_URL
 ].filter(Boolean);
 
